@@ -392,7 +392,9 @@ footer .contact a{text-decoration:underline;text-underline-offset:3px}
   </div>
   <label for="fName">Full name</label><input id="fName" autocomplete="name">
   <label for="fMail">Email</label><input id="fMail" type="email" autocomplete="email">
-  <div id="fRoleWrap" hidden><label for="fRole">Volunteer role</label><select id="fRole"></select></div>
+  <div id="fColWrap"><label for="fCollege">College</label><input id="fCollege" autocomplete="organization" maxlength="160"></div>
+  <div id="fRoleWrap" hidden><label for="fRole">Volunteer role</label><select id="fRole"></select>
+    <div id="fReasonWrap"><label for="fReason">Why do you want to volunteer?</label><textarea id="fReason" rows="3" maxlength="500"></textarea></div></div>
   <div class="mrow">
     <button class="btn" id="cancel" type="button">Cancel</button>
     <button class="btn solid" id="submit" type="button">Confirm registration</button>
@@ -496,7 +498,7 @@ $("#grid").addEventListener("click",ev=>{const b=ev.target.closest("[data-a]");i
 const dlg=$("#dlg");
 function setMode(m){
   mode=m;$("#tAttend").setAttribute("aria-pressed",m==="attend");$("#tVol").setAttribute("aria-pressed",m==="vol");
-  $("#fRoleWrap").hidden=m!=="vol";$("#submit").textContent=m==="vol"?"Send application":"Confirm registration";
+  $("#fRoleWrap").hidden=m!=="vol";$("#fColWrap").hidden=!!(cur&&cur.campus);$("#fReasonWrap").hidden=!!(cur&&cur.campus);$("#submit").textContent=m==="vol"?"Send application":"Confirm registration";
 }
 function openDlg(id,m){
   cur=EVENTS.concat(CAMPUS).find(e=>e.id===id);
@@ -512,13 +514,16 @@ $("#cancel").onclick=()=>dlg.close();
 $("#submit").onclick=async()=>{
   const n=$("#fName").value.trim(),m=$("#fMail").value.trim();
   if(!n||!/\S+@\S+\.\S+/.test(m)){toast("Enter your name and a valid email");return}
+  const col=$("#fCollege").value.trim(),why=$("#fReason").value.trim();
+  if(!cur.campus&&col.length<2){toast("Enter your college name");return}
+  if(!cur.campus&&mode==="vol"&&why.length<10){toast("Tell us briefly why you want to volunteer");return}
   if(sb&&cur.remote){
     const btn=$("#submit");btn.disabled=true;let r;
     if(cur.campus)r=await sb.rpc("campus_signup",{pw:CPW,event_id:cur.cid,kind:mode,name:n,email:m,role:mode==="vol"?cur.roles[$("#fRole").selectedIndex][0]:null});
-    else if(mode==="attend")r=await sb.from("registrations").insert({event_id:cur.id,name:n,email:m});
-    else r=await sb.from("volunteer_apps").insert({event_id:cur.id,role_id:cur.roleIds[$("#fRole").selectedIndex],name:n,email:m});
+    else if(mode==="attend")r=await sb.rpc("register_attendee",{p_event:String(cur.id),p_name:n,p_email:m,p_college:col});
+    else r=await sb.rpc("apply_volunteer",{p_event:String(cur.id),p_role:String(cur.roleIds[$("#fRole").selectedIndex]),p_name:n,p_email:m,p_college:col,p_reason:why});
     btn.disabled=false;
-    if(r.error){toast(r.error.code==="23505"?"You have already signed up with this email":/sold out/i.test(r.error.message||"")?"Sorry, this event is full":"Could not save. Please try again");return}
+    if(r.error){toast(r.error.code==="23505"?"You have already signed up with this email":/sold out/i.test(r.error.message||"")?"Sorry, this event is full":/not open/i.test(r.error.message||"")?"This event is not open for sign-ups":"Could not save. Please try again");return}
     toast(mode==="attend"?"Registered for "+cur.title:"Application sent for "+cur.title);
     dlg.close();if(cur.campus)showCampus(await campusFetch(CPW));else await loadRemote();return;
   }
@@ -603,8 +608,8 @@ function viewAuth(m){
    <p style="margin-top:16px">${m==="signup"?`Already registered? <button class="olink" data-act="toLogin" type="button">Log in</button>`:`New organizer? <button class="olink" data-act="toSignup" type="button">Create an account</button> · <button class="olink" data-act="forgot" type="button">Forgot password?</button>`}</p>`;
 }
 function viewPending(){
-  $("#oTitle").textContent=ORG.declined?"Application declined":"Waiting for verification";
-  oBody.innerHTML=`<p>${ORG.declined?"Thanks, "+esc(ORG.org_name)+". We could not approve this organizer account. If you think this is a mistake, contact us at zynovexx@gmail.com.":"Thanks, "+esc(ORG.org_name)+". Your organizer account is waiting for verification. Once we approve it you can add events here."}</p>
+  $("#oTitle").textContent="Waiting for verification";
+  oBody.innerHTML=`<p>Thanks, ${esc(ORG.org_name)}. Your organizer account is waiting for verification. Once we approve it you can add events here.</p>
    <div class="mrow"><button class="btn" data-act="logout" type="button">Log out</button></div>`;
 }
 function viewDash(){
@@ -816,14 +821,62 @@ function aLogin(){
   $("#aTitle").textContent="Admin login";
   aBody.innerHTML=`<label for="aMail">Email</label><input id="aMail" type="email" autocomplete="email"><label for="aPass">Password</label><input id="aPass" type="password" autocomplete="current-password"><p class="omsg" id="aMsg" role="alert"></p><div class="mrow"><button class="btn solid" data-aact="login" type="button">Log in</button></div>`;
 }
-function fmtD(t){return new Date(t).toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"numeric"})}
-async function aList(){
-  $("#aTitle").textContent="Verify organizers";
-  const r=await sb.rpc("admin_organizers");
-  if(r.error){aBody.innerHTML='<p>Could not load organizers. Run the admin setup SQL in Supabase first.</p><div class="mrow"><button class="btn" data-aact="logout" type="button">Log out</button></div>';return}
+function fmtD(t){try{return new Date(t).toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"numeric"})}catch(e){return"-"}}
+function fmtDT(t){try{return t?new Date(t).toLocaleString("en-IN",{day:"numeric",month:"short",year:"numeric",hour:"numeric",minute:"2-digit"}):"Never"}catch(e){return"-"}}
+let ATAB="org",AREG=[],AVOL=[],AF={};
+const SL={approved:"Accepted",declined:"Rejected",pending:"Pending"};
+const uniq=(a,k)=>[...new Set(a.map(x=>x[k]).filter(Boolean))].sort();
+const opts=l=>'<option value="">All</option>'+l.map(v=>`<option>${esc(v)}</option>`).join("");
+function aTabs(){
+  const t=(k,n)=>`<button class="chip" data-aact="tab" data-t="${k}" aria-pressed="${ATAB===k}" type="button">${n}</button>`;
+  return `<div class="tabs" role="tablist">${t("org","Organizers")}${t("reg","Registrations")}${t("vol","Volunteers")}<button class="btn" data-aact="logout" type="button" style="margin-left:auto">Log out</button></div>`;
+}
+async function aList(tab){
+  if(tab)ATAB=tab;
+  $("#aTitle").textContent="Admin";
+  aBody.innerHTML=aTabs()+"<p>Loading...</p>";
+  try{if(ATAB==="org")await aOrgs();else if(ATAB==="reg")await aRegs();else await aVols()}
+  catch(e){aBody.innerHTML=aTabs()+"<p>Could not load this list. Run the latest migration in Supabase, then try again.</p>"}
+}
+async function aOrgs(){
+  const r=await sb.rpc("admin_organizers");if(r.error)throw r.error;
   const rows=r.data||[];
-  aBody.innerHTML=`<div class="otop"><span>${rows.filter(o=>!o.verified).length} waiting for verification</span><button class="btn" data-aact="logout" type="button">Log out</button></div>`+
-   (rows.map(o=>`<div class="vrow"><span><b>${esc(o.org_name)}</b> · ${esc(o.email||"")}<br><span class="st">${o.verified?"Verified":o.declined?"Declined":"Waiting for verification"} · signed up ${fmtD(o.created_at)} · last login ${o.last_sign_in_at?fmtD(o.last_sign_in_at):"never"}</span></span><span class="oact" style="margin:0"><button class="btn${o.verified?"":" solid"}" data-aact="toggle" data-id="${esc(o.id)}" data-v="${o.verified?0:1}" type="button">${o.verified?"Remove verification":"Verify"}</button>${o.verified||o.declined?"":` <button class="btn" data-aact="decline" data-id="${esc(o.id)}" type="button">Decline</button>`}</span></div>`).join("")||"<p>No organizers have signed up yet.</p>");
+  aBody.innerHTML=aTabs()+`<div class="otop"><span>${rows.filter(o=>!o.verified).length} waiting for verification</span></div>`+
+   (rows.map(o=>`<div class="vrow"><span><b>${esc(o.org_name||"Unnamed")}</b> · ${esc(o.email||"")}<br><span class="st">${o.verified?"Verified":"Waiting for verification"} · email ${o.email_confirmed_at?"confirmed":"not confirmed"} · signed up ${fmtDT(o.created_at)} · last login ${fmtDT(o.last_sign_in_at)}</span></span><span class="oact" style="margin:0"><button class="btn${o.verified?"":" solid"}" data-aact="toggle" data-id="${esc(o.id)}" data-v="${o.verified?0:1}" type="button">${o.verified?"Remove verification":"Verify"}</button></span></div>`).join("")||"<p>No organizers have signed up yet.</p>");
+}
+const inD=x=>(x.created_at||"").slice(0,10);
+function qOk(x,f){const q=(AF.q||"").toLowerCase();return!q||f.map(k=>x[k]||"").join(" ").toLowerCase().includes(q)}
+function regsF(){return AREG.filter(x=>(!AF.ev||x.event_title===AF.ev)&&(!AF.from||inD(x)>=AF.from)&&(!AF.to||inD(x)<=AF.to)&&qOk(x,["name","email","college"]))}
+function volsF(){return AVOL.filter(x=>(!AF.st||x.status===AF.st)&&(!AF.ev||x.event_title===AF.ev)&&(!AF.org||x.organizer===AF.org)&&qOk(x,["name","email","college"]))}
+async function aRegs(){
+  const r=await sb.rpc("admin_registrations");if(r.error)throw r.error;
+  AREG=r.data||[];AF={};
+  aBody.innerHTML=aTabs()+`<div class="ogrid"><div><label for="afEv">Event</label><select id="afEv" data-af="ev">${opts(uniq(AREG,"event_title"))}</select></div><div><label for="afQ">Search</label><input id="afQ" data-af="q" placeholder="Name, email, college"></div><div><label for="afFrom">From date</label><input id="afFrom" type="date" data-af="from"></div><div><label for="afTo">To date</label><input id="afTo" type="date" data-af="to"></div></div><div class="otop"><span id="aCount"></span><button class="btn" data-aact="csv" type="button">Export CSV</button></div><div id="aRows"></div>`;
+  drawRegs();
+}
+function drawRegs(){
+  const L=regsF();$("#aCount").textContent=L.length+" of "+AREG.length+" registrations";
+  $("#aRows").innerHTML=L.length?L.map(x=>`<div class="vrow"><span><b>${esc(x.name)}</b> · ${esc(x.email)}<br><span class="st">${esc(x.college||"-")} · ${esc(x.event_title)} · ${esc(x.organizer||"")} · ${fmtDT(x.created_at)}</span></span></div>`).join(""):"<p>No registrations to show.</p>";
+}
+async function aVols(){
+  const r=await sb.rpc("admin_volunteer_apps");if(r.error)throw r.error;
+  AVOL=r.data||[];AF={};
+  aBody.innerHTML=aTabs()+`<div class="ogrid"><div><label for="afSt">Status</label><select id="afSt" data-af="st"><option value="">All</option><option value="pending">Pending</option><option value="approved">Accepted</option><option value="declined">Rejected</option></select></div><div><label for="afEv">Event</label><select id="afEv" data-af="ev">${opts(uniq(AVOL,"event_title"))}</select></div><div><label for="afOrg">Organizer</label><select id="afOrg" data-af="org">${opts(uniq(AVOL,"organizer"))}</select></div><div><label for="afQ">Search</label><input id="afQ" data-af="q" placeholder="Name, email, college"></div></div><div class="otop"><span id="aCount"></span><button class="btn" data-aact="csv" type="button">Export CSV</button></div><div id="aRows"></div>`;
+  drawVols();
+}
+function drawVols(){
+  const L=volsF(),c=s=>AVOL.filter(x=>x.status===s).length;
+  $("#aCount").textContent=L.length+" shown · "+c("pending")+" pending · "+c("approved")+" accepted · "+c("declined")+" rejected";
+  $("#aRows").innerHTML=L.length?L.map(x=>{
+    const bt=[["approved","Accept"],["declined","Reject"],["pending","Reset to pending"]].filter(p=>p[0]!==x.status).map(p=>`<button class="btn sm" data-aact="vstat" data-id="${esc(x.id)}" data-s="${p[0]}" type="button">${p[1]}</button>`).join(" ");
+    return `<div class="vrow"><span><b>${esc(x.name)}</b> · ${esc(x.email)}<br><span class="st">${esc(x.college||"-")} · ${esc(x.event_title)} · ${esc(x.organizer||"")}<br>Role: ${esc(x.role||"-")} · ${esc(SL[x.status]||x.status)} · applied ${fmtDT(x.created_at)}<br>Reason: ${esc(x.reason||"-")}</span></span><span class="oact" style="margin:0">${bt}</span></div>`}).join(""):"<p>No volunteer applications to show.</p>";
+}
+function aCsv(){
+  let rows,name;
+  if(ATAB==="reg"){name="registrations";rows=[["Name","Email","College","Event","Organizer","Registered at"],...regsF().map(x=>[x.name,x.email,x.college,x.event_title,x.organizer,x.created_at])]}
+  else{name="volunteer-applications";rows=[["Name","Email","College","Event","Organizer","Preferred role","Reason","Status","Applied at"],...volsF().map(x=>[x.name,x.email,x.college,x.event_title,x.organizer,x.role,x.reason,SL[x.status]||x.status,x.created_at])]}
+  const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([rows.map(r=>r.map(safeCell).join(",")).join("\n")],{type:"text/csv"}));
+  a.download="zynovex-"+name+".csv";document.body.appendChild(a);a.click();a.remove();
 }
 async function admOpen(){
   if(!sb){toast("The database is not connected");return}
@@ -841,18 +894,21 @@ aBody.addEventListener("click",async ev=>{
     return aList();
   }
   if(a==="logout"){await sb.auth.signOut();return aLogin()}
-  if(a==="toggle"){
-    const ok=b.dataset.v==="1",r=await sb.from("organizers").update(ok?{verified:true,declined:false}:{verified:false}).eq("id",b.dataset.id);
-    if(r.error){toast("Could not update. Check the admin setup in Supabase");return}
-    toast(ok?"Organizer verified":"Verification removed");return aList();
+  if(a==="tab")return aList(b.dataset.t);
+  if(a==="csv")return aCsv();
+  if(a==="vstat"){
+    const r=await sb.rpc("admin_set_volunteer_status",{p_id:String(b.dataset.id),p_status:b.dataset.s});
+    if(r.error){toast("Could not update the application");return}
+    const x=AVOL.find(v=>String(v.id)===b.dataset.id);if(x)x.status=b.dataset.s;
+    toast("Application updated");return drawVols();
   }
-  if(a==="decline"){
-    if(!confirm("Decline this organizer? They will see that their application was declined."))return;
-    const r=await sb.from("organizers").update({verified:false,declined:true}).eq("id",b.dataset.id);
-    if(r.error){toast("Could not update. Run the decline SQL in Supabase first");return}
-    toast("Organizer declined");return aList();
+  if(a==="toggle"){
+    const r=await sb.from("organizers").update({verified:b.dataset.v==="1"}).eq("id",b.dataset.id);
+    if(r.error){toast("Could not update. Check the admin setup in Supabase");return}
+    toast(b.dataset.v==="1"?"Organizer verified":"Verification removed");return aList();
   }
 });
+aBody.addEventListener("input",ev=>{const k=ev.target.dataset&&ev.target.dataset.af;if(!k)return;AF[k]=ev.target.value;if(ATAB==="reg")drawRegs();else if(ATAB==="vol")drawVols()});
 $("#aClose").onclick=()=>$("#admDlg").close();
 $("#admDlg").addEventListener("click",ev=>{if(ev.target===$("#admDlg"))$("#admDlg").close()});
 $("#adminBtn").onclick=admOpen;
