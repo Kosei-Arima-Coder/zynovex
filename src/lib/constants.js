@@ -1,0 +1,73 @@
+export const ADMIN_EMAIL = 'koseiarimacoder@gmail.com'
+
+export const CAT_HUE = {
+  'Tech': 215,
+  'Sports': 160,
+  'Music': 285,
+  'Art & Culture': 320,
+  'Community': 130,
+  'Food': 30,
+  'Workshops': 195,
+  'Campus Event': 45,
+}
+
+export const CAT_LIST = Object.keys(CAT_HUE)
+
+export const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+export const BLR = [
+  'Indiranagar',
+  'Koramangala',
+  'HSR Layout',
+  'Whitefield',
+  'Jayanagar',
+  'JP Nagar',
+  'BTM Layout',
+  'Malleshwaram',
+  'Basavanagudi',
+  'Rajajinagar',
+  'Marathahalli',
+  'Bellandur',
+  'Electronic City',
+  'Hebbal',
+  'Yelahanka',
+  'Banashankari',
+  'Cubbon Park',
+  'Lalbagh',
+  'MG Road',
+  'Brigade Road',
+  'Church Street',
+  'Ulsoor',
+  'Sadashivanagar',
+  'Vijayanagar',
+  'Yeshwanthpur',
+  'Kengeri',
+  'Sarjapur Road',
+  'Bannerghatta Road',
+  'Domlur',
+  'CV Raman Nagar',
+  'KR Puram',
+  'Mahadevapura',
+  'Kalyan Nagar',
+  'Banaswadi',
+  'RT Nagar',
+  'Frazer Town',
+  'Richmond Town',
+  'Shivajinagar',
+  'Vasanth Nagar',
+  'Seshadripuram',
+  'Nagarbhavi',
+  'Peenya',
+  'Jalahalli',
+  'Hennur',
+  'Kanakapura Road',
+  'Hosur Road',
+  'Silk Board',
+  'Bommanahalli',
+  'Harlur',
+  'Kadubeesanahalli',
+  'Bengaluru Palace Grounds',
+  'Kanteerava Stadium',
+]
+
+export const DEFAULT_EVENTS = []
